@@ -26,6 +26,7 @@ import (
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	scheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/metrics"
 	rest "k8s.io/client-go/rest"
 )
 
@@ -51,15 +52,17 @@ type HorizontalPodAutoscalerInterface interface {
 
 // horizontalPodAutoscalers implements HorizontalPodAutoscalerInterface
 type horizontalPodAutoscalers struct {
-	client rest.Interface
-	ns     string
+	client        rest.Interface
+	clientMetrics *metrics.ClientMetrics
+	ns            string
 }
 
 // newHorizontalPodAutoscalers returns a HorizontalPodAutoscalers
 func newHorizontalPodAutoscalers(c *AutoscalingV1Client, namespace string) *horizontalPodAutoscalers {
 	return &horizontalPodAutoscalers{
-		client: c.RESTClient(),
-		ns:     namespace,
+		client:        c.RESTClient(),
+		clientMetrics: c.clientMetrics,
+		ns:            namespace,
 	}
 }
 
@@ -73,6 +76,9 @@ func (c *horizontalPodAutoscalers) Get(name string, options metav1.GetOptions) (
 		VersionedParams(&options, scheme.ParameterCodec).
 		Do().
 		Into(result)
+	if c.clientMetrics != nil {
+		c.clientMetrics.Inc("hpa", "get", name, c.ns, err)
+	}
 	return
 }
 
@@ -90,6 +96,9 @@ func (c *horizontalPodAutoscalers) List(opts metav1.ListOptions) (result *v1.Hor
 		Timeout(timeout).
 		Do().
 		Into(result)
+	if c.clientMetrics != nil {
+		c.clientMetrics.Inc("hpa", "list", "", c.ns, err)
+	}
 	return
 }
 
@@ -100,12 +109,16 @@ func (c *horizontalPodAutoscalers) Watch(opts metav1.ListOptions) (watch.Interfa
 		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
 	}
 	opts.Watch = true
-	return c.client.Get().
+	watch, err := c.client.Get().
 		Namespace(c.ns).
 		Resource("horizontalpodautoscalers").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
 		Watch()
+	if c.clientMetrics != nil {
+		c.clientMetrics.Inc("hpa", "watch", "", c.ns, err)
+	}
+	return watch, err
 }
 
 // Create takes the representation of a horizontalPodAutoscaler and creates it.  Returns the server's representation of the horizontalPodAutoscaler, and an error, if there is any.
@@ -117,6 +130,9 @@ func (c *horizontalPodAutoscalers) Create(horizontalPodAutoscaler *v1.Horizontal
 		Body(horizontalPodAutoscaler).
 		Do().
 		Into(result)
+	if c.clientMetrics != nil {
+		c.clientMetrics.Inc("hpa", "create", horizontalPodAutoscaler.Name, c.ns, err)
+	}
 	return
 }
 
@@ -130,6 +146,9 @@ func (c *horizontalPodAutoscalers) Update(horizontalPodAutoscaler *v1.Horizontal
 		Body(horizontalPodAutoscaler).
 		Do().
 		Into(result)
+	if c.clientMetrics != nil {
+		c.clientMetrics.Inc("hpa", "update", horizontalPodAutoscaler.Name, c.ns, err)
+	}
 	return
 }
 
@@ -146,18 +165,25 @@ func (c *horizontalPodAutoscalers) UpdateStatus(horizontalPodAutoscaler *v1.Hori
 		Body(horizontalPodAutoscaler).
 		Do().
 		Into(result)
+	if c.clientMetrics != nil {
+		c.clientMetrics.Inc("hpa", "updatestatus", horizontalPodAutoscaler.Name, c.ns, err)
+	}
 	return
 }
 
 // Delete takes name of the horizontalPodAutoscaler and deletes it. Returns an error if one occurs.
 func (c *horizontalPodAutoscalers) Delete(name string, options *metav1.DeleteOptions) error {
-	return c.client.Delete().
+	err := c.client.Delete().
 		Namespace(c.ns).
 		Resource("horizontalpodautoscalers").
 		Name(name).
 		Body(options).
 		Do().
 		Error()
+	if c.clientMetrics != nil {
+		c.clientMetrics.Inc("hpa", "delete", "", c.ns, err)
+	}
+	return err
 }
 
 // DeleteCollection deletes a collection of objects.
@@ -166,7 +192,7 @@ func (c *horizontalPodAutoscalers) DeleteCollection(options *metav1.DeleteOption
 	if listOptions.TimeoutSeconds != nil {
 		timeout = time.Duration(*listOptions.TimeoutSeconds) * time.Second
 	}
-	return c.client.Delete().
+	err := c.client.Delete().
 		Namespace(c.ns).
 		Resource("horizontalpodautoscalers").
 		VersionedParams(&listOptions, scheme.ParameterCodec).
@@ -174,6 +200,10 @@ func (c *horizontalPodAutoscalers) DeleteCollection(options *metav1.DeleteOption
 		Body(options).
 		Do().
 		Error()
+	if c.clientMetrics != nil {
+		c.clientMetrics.Inc("hpa", "deletecollection", "", c.ns, err)
+	}
+	return err
 }
 
 // Patch applies the patch and returns the patched horizontalPodAutoscaler.
@@ -187,5 +217,8 @@ func (c *horizontalPodAutoscalers) Patch(name string, pt types.PatchType, data [
 		Body(data).
 		Do().
 		Into(result)
+	if c.clientMetrics != nil {
+		c.clientMetrics.Inc("hpa", "patch", name, c.ns, err)
+	}
 	return
 }
